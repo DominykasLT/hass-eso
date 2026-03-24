@@ -57,7 +57,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, ["sensor"])
 
-    async def async_import_generation(now: datetime, retry: bool = False) -> None:
+    async def async_import_generation(
+        now: datetime, retry: bool = False, backfill: bool = False
+    ) -> None:
         if hass.is_stopping:
             return
         all_failed = False
@@ -71,19 +73,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         sensors: list = hass.data[DOMAIN][entry.entry_id].get("sensors", [])
 
         for obj in entry.data[CONF_OBJECTS]:
-            _LOGGER.info("Fetching ESO hourly dataset [%s]", obj[CONF_NAME])
-            try:
-                await hass.async_add_executor_job(
-                    client.fetch_dataset,
-                    obj[CONF_ID],
-                    now,
-                )
-            except Exception as e:
-                _LOGGER.error("ESO fetch dataset error [%s]: %s", obj[CONF_NAME], e)
-                all_failed = True
-                continue
+            if backfill:
+                _LOGGER.info("Backfilling ESO hourly dataset [%s] (12 weeks)", obj[CONF_NAME])
+                try:
+                    dataset = await hass.async_add_executor_job(
+                        client.fetch_dataset_backfill,
+                        obj[CONF_ID],
+                        now,
+                        12,
+                    )
+                except Exception as e:
+                    _LOGGER.error("ESO backfill error [%s]: %s", obj[CONF_NAME], e)
+                    all_failed = True
+                    continue
+            else:
+                _LOGGER.info("Fetching ESO hourly dataset [%s]", obj[CONF_NAME])
+                try:
+                    await hass.async_add_executor_job(
+                        client.fetch_dataset,
+                        obj[CONF_ID],
+                        now,
+                    )
+                except Exception as e:
+                    _LOGGER.error("ESO fetch dataset error [%s]: %s", obj[CONF_NAME], e)
+                    all_failed = True
+                    continue
+                dataset = client.get_dataset(obj[CONF_ID])
 
-            dataset = client.get_dataset(obj[CONF_ID])
             await async_insert_statistics(hass, entry, obj, dataset)
             if obj.get(CONF_PRICE_ENTITY):
                 await async_insert_cost_statistics(hass, entry, obj, dataset)
@@ -131,7 +147,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async_track_time_change(hass, async_import_generation, hour=5, minute=11, second=0)
 
     async def _on_ha_started(_event) -> None:
-        await async_import_generation(datetime.now())
+        await async_import_generation(datetime.now(), backfill=True)
 
     hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_ha_started)
 

@@ -103,6 +103,17 @@ class ESOClient:
         self._populate_dataset(obj, data)
         return self.dataset[obj]
 
+    def fetch_dataset_backfill(self, obj: str, date: datetime, weeks: int = 12) -> dict | None:
+        """Fetch hourly data going back `weeks` weeks, merging all results."""
+        cache_key = f"{obj}_backfill"
+        self.dataset[cache_key] = {}
+        for i in range(weeks):
+            target_date = date - timedelta(weeks=i)
+            _LOGGER.info("Backfill fetch week %d/%d for %s (date=%s)", i + 1, weeks, obj, target_date.strftime("%Y-%m-%d"))
+            data = self.fetch(obj, target_date)
+            self._populate_dataset(cache_key, data)
+        return self.dataset[cache_key]
+
     def fetch_dataset_monthly(self, obj: str, year: int) -> dict | None:
         cache_key = f"{obj}_monthly_{year}"
         if cache_key in self.dataset:
