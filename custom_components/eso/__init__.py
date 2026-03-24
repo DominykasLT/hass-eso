@@ -71,7 +71,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         sensors: list = hass.data[DOMAIN][entry.entry_id].get("sensors", [])
 
         for obj in entry.data[CONF_OBJECTS]:
-            _LOGGER.info("Fetching ESO dataset [%s]", obj[CONF_NAME])
+            _LOGGER.info("Fetching ESO hourly dataset [%s]", obj[CONF_NAME])
             try:
                 await hass.async_add_executor_job(
                     client.fetch_dataset,
@@ -89,8 +89,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 await async_insert_cost_statistics(hass, entry, obj, dataset)
 
             for sensor in sensors:
-                if hasattr(sensor, "update_from_dataset") and sensor._obj[CONF_ID] == obj[CONF_ID]:
+                if (
+                    hasattr(sensor, "update_from_dataset")
+                    and sensor._obj[CONF_ID] == obj[CONF_ID]
+                    and getattr(sensor, "_granularity", None) == "hourly"
+                ):
                     sensor.update_from_dataset(dataset)
+
+            _LOGGER.info("Fetching ESO monthly dataset [%s]", obj[CONF_NAME])
+            try:
+                monthly_dataset = await hass.async_add_executor_job(
+                    client.fetch_dataset_monthly,
+                    obj[CONF_ID],
+                    now.year,
+                )
+            except Exception as e:
+                _LOGGER.error("ESO fetch monthly dataset error [%s]: %s", obj[CONF_NAME], e)
+                monthly_dataset = None
+
+            if monthly_dataset:
+                await async_insert_statistics_monthly(hass, entry, obj, monthly_dataset)
+                for sensor in sensors:
+                    if (
+                        hasattr(sensor, "update_from_dataset")
+                        and sensor._obj[CONF_ID] == obj[CONF_ID]
+                        and getattr(sensor, "_granularity", None) == "monthly"
+                    ):
+                        sensor.update_from_dataset(monthly_dataset)
 
             _LOGGER.info("Import completed for %s", obj[CONF_NAME])
 
@@ -211,6 +236,36 @@ def _purge_statistics_sync(instance, statistic_ids: list[str], cutoff_ts: float)
         )
         session.commit()
         _LOGGER.debug("Purged %d old statistic rows", deleted)
+
+
+async def async_insert_statistics_monthly(
+    hass: HomeAssistant, entry: ConfigEntry, obj: dict, dataset: dict
+) -> None:
+    retention_days: int = entry.options.get(CONF_RETENTION_DAYS, 0)
+    statistic_ids_to_purge: list[str] = []
+    for data_type in [CONF_CONSUMED, CONF_RETURNED]:
+        if obj.get(data_type) is False:
+            continue
+        statistic_id = f"{DOMAIN}:energy_{data_type}_{obj[CONF_ID]}_monthly"
+        mapped_key = ENERGY_TYPE_MAP[data_type]
+        if not dataset or mapped_key not in dataset:
+            _LOGGER.error("Received empty monthly data for %s", statistic_id)
+            continue
+        generation_data = dataset[mapped_key]
+        metadata = StatisticMetaData(
+            has_sum=True,
+            mean_type=StatisticMeanType.NONE,
+            name=f"{obj[CONF_NAME]} ({data_type} monthly)",
+            source=DOMAIN,
+            statistic_id=statistic_id,
+            unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+            unit_class="energy",
+        )
+        statistics = await _async_get_statistics(hass, metadata, generation_data)
+        async_add_external_statistics(hass, metadata, statistics)
+        statistic_ids_to_purge.append(statistic_id)
+    if retention_days > 0 and statistic_ids_to_purge:
+        await _async_purge_old_statistics(hass, statistic_ids_to_purge, retention_days)
 
 
 async def async_insert_cost_statistics(

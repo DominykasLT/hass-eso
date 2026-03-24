@@ -34,17 +34,22 @@ DATA_TYPE_MAP = {
 }
 
 
+GRANULARITY_HOURLY = "hourly"
+GRANULARITY_MONTHLY = "monthly"
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    sensors: list[ESOSensor] = []
+    sensors: list[SensorEntity] = []
     for obj in entry.data[CONF_OBJECTS]:
         for data_type, series_key in DATA_TYPE_MAP.items():
             if not obj.get(data_type, data_type == CONF_CONSUMED):
                 continue
-            sensors.append(ESOSensor(entry, obj, data_type, series_key))
+            sensors.append(ESOSensor(entry, obj, data_type, series_key, GRANULARITY_HOURLY))
+            sensors.append(ESOSensor(entry, obj, data_type, series_key, GRANULARITY_MONTHLY))
         price_entity = obj.get(CONF_PRICE_ENTITY, "")
         if price_entity:
             sensors.append(ESOCostSensor(entry, obj))
@@ -66,14 +71,16 @@ class ESOSensor(SensorEntity):
         obj: dict,
         data_type: str,
         series_key: str,
+        granularity: str,
     ) -> None:
         self._entry = entry
         self._obj = obj
         self._data_type = data_type
         self._series_key = series_key
+        self._granularity = granularity
         obj_id = obj[CONF_ID]
-        self._attr_unique_id = f"eso_{obj_id}_{data_type}"
-        self._attr_name = f"{obj[CONF_NAME]} ({data_type})"
+        self._attr_unique_id = f"eso_{obj_id}_{data_type}_{granularity}"
+        self._attr_name = f"{obj[CONF_NAME]} ({data_type} {granularity})"
         self._attr_native_value: float | None = None
 
     def update_from_dataset(self, dataset: dict) -> None:
