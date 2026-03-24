@@ -112,26 +112,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 ):
                     sensor.update_from_dataset(dataset)
 
-            _LOGGER.info("Fetching ESO monthly dataset [%s]", obj[CONF_NAME])
-            try:
-                monthly_dataset = await hass.async_add_executor_job(
-                    client.fetch_dataset_monthly,
-                    obj[CONF_ID],
-                    now.year,
-                )
-            except Exception as e:
-                _LOGGER.error("ESO fetch monthly dataset error [%s]: %s", obj[CONF_NAME], e)
-                monthly_dataset = None
+            years_to_fetch = [now.year, now.year - 1, now.year - 2] if backfill else [now.year, now.year - 1]
+            for year in years_to_fetch:
+                _LOGGER.info("Fetching ESO monthly dataset [%s] for year %d", obj[CONF_NAME], year)
+                try:
+                    monthly_dataset = await hass.async_add_executor_job(
+                        client.fetch_dataset_monthly,
+                        obj[CONF_ID],
+                        year,
+                    )
+                except Exception as e:
+                    _LOGGER.error("ESO fetch monthly dataset error [%s] year %d: %s", obj[CONF_NAME], year, e)
+                    monthly_dataset = None
 
-            if monthly_dataset:
-                await async_insert_statistics_monthly(hass, entry, obj, monthly_dataset)
-                for sensor in sensors:
-                    if (
-                        hasattr(sensor, "update_from_dataset")
-                        and sensor._obj[CONF_ID] == obj[CONF_ID]
-                        and getattr(sensor, "_granularity", None) == "monthly"
-                    ):
-                        sensor.update_from_dataset(monthly_dataset)
+                if monthly_dataset:
+                    await async_insert_statistics_monthly(hass, entry, obj, monthly_dataset)
+                    if year == now.year:
+                        for sensor in sensors:
+                            if (
+                                hasattr(sensor, "update_from_dataset")
+                                and sensor._obj[CONF_ID] == obj[CONF_ID]
+                                and getattr(sensor, "_granularity", None) == "monthly"
+                            ):
+                                sensor.update_from_dataset(monthly_dataset)
 
             _LOGGER.info("Import completed for %s", obj[CONF_NAME])
 
