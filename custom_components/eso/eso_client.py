@@ -41,7 +41,13 @@ class ESOClient:
             _LOGGER.error(f"ESO login error: {e}")
             return
 
-    def fetch(self, obj: str, date: datetime) -> dict:
+    def fetch(
+        self,
+        obj: str,
+        date: datetime,
+        display_type: str = "hourly",
+        period: str = "week",
+    ) -> dict:
         if not self.cookies:
             _LOGGER.error("Cookies are empty. Check your credentials.")
             return {}
@@ -56,8 +62,8 @@ class ESOClient:
         data = {
             "objects[]": obj,
             "objects_mock": "",
-            "display_type": "hourly",
-            "period": "week",
+            "display_type": display_type,
+            "period": period,
             "energy_type": "general",
             "scales": "total",
             "active_date_value": date.strftime("%Y-%m-%d 00:00"),
@@ -85,11 +91,28 @@ class ESOClient:
             _LOGGER.error(f"ESO fetch error: {e}")
             return {}
 
+    def fetch_monthly(self, obj: str, year: int) -> dict:
+        date = datetime(year, 1, 1)
+        return self.fetch(obj, date, display_type="monthly", period="year")
+
     def fetch_dataset(self, obj: str, date: datetime) -> dict | None:
         if obj in self.dataset:
             return self.dataset[obj]
         self.dataset[obj] = {}
         data = self.fetch(obj, date)
+        self._populate_dataset(obj, data)
+        return self.dataset[obj]
+
+    def fetch_dataset_monthly(self, obj: str, year: int) -> dict | None:
+        cache_key = f"{obj}_monthly_{year}"
+        if cache_key in self.dataset:
+            return self.dataset[cache_key]
+        self.dataset[cache_key] = {}
+        data = self.fetch_monthly(obj, year)
+        self._populate_dataset(cache_key, data)
+        return self.dataset[cache_key]
+
+    def _populate_dataset(self, cache_key: str, data: list) -> None:
         for d in data:
             if d.get("command") == "update_build_id":
                 self.form_parser.set("form_build_id", d["new"])
@@ -101,10 +124,9 @@ class ESOClient:
             datasets = d["settings"]["eso_consumption_history_form"]["graphics_data"]["datasets"]
             for dataset in datasets:
                 consumption_type = dataset["key"]
-                if consumption_type not in self.dataset[obj]:
-                    self.dataset[obj][consumption_type] = {}
-                self.dataset[obj][consumption_type] = self.parse_dataset(dataset)
-        return self.dataset[obj]
+                if consumption_type not in self.dataset[cache_key]:
+                    self.dataset[cache_key][consumption_type] = {}
+                self.dataset[cache_key][consumption_type] = self.parse_dataset(dataset)
 
     def get_dataset(self, obj: str) -> dict | None:
         if obj not in self.dataset:
@@ -114,9 +136,20 @@ class ESOClient:
     @staticmethod
     def parse_dataset(dataset: dict) -> dict:
         result = {}
+        DATE_FORMATS = ["%Y%m%d%H%M", "%Y-%m", "%Y%m"]
         for record in dataset["record"]:
             try:
-                dt = datetime.strptime(record["date"], "%Y%m%d%H%M")
+                raw_date = record["date"]
+                dt = None
+                for fmt in DATE_FORMATS:
+                    try:
+                        dt = datetime.strptime(raw_date, fmt)
+                        break
+                    except ValueError:
+                        continue
+                if dt is None:
+                    _LOGGER.error(f"Unrecognised date format in record: {record}")
+                    continue
                 ts = dt.timestamp()
                 val = abs(float(record["value"])) if record["value"] is not None else 0.0
                 result[ts] = val

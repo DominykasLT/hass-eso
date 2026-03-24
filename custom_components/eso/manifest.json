@@ -6,5 +6,6 @@
   "codeowners": ["@algirdasc"],
   "issue_tracker": "https://github.com/algirdasc/hass-eso/issues",
   "requirements": ["requests"],
+  "config_flow": true,
   "version": "1.0.0"
 }

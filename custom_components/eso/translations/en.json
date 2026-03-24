@@ -1,0 +1,56 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "ESO credentials",
+        "description": "Enter your mano.eso.lt login credentials. They will be validated before saving.",
+        "data": {
+          "username": "Username / Email",
+          "password": "Password"
+        }
+      },
+      "object": {
+        "title": "Add energy object",
+        "description": "Enter the ESO object ID (the number from mano.eso.lt/objects/YOUR_ID). Enable 'Add another' to configure multiple objects.",
+        "data": {
+          "name": "Name (shown in Energy dashboard)",
+          "id": "Object ID",
+          "consumed": "Track consumed energy (P+)",
+          "returned": "Track returned energy (P-)",
+          "price_entity": "Price entity (optional, e.g. sensor.nordpool_kwh_lt_eur)",
+          "price_currency": "Price currency",
+          "add_another": "Add another object"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Login failed. Check your username and password.",
+      "confirm_contact": "Login succeeded but the consumption form is not available. Please log in to mano.eso.lt and confirm your contact information first."
+    },
+    "abort": {
+      "already_configured": "ESO is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Update ESO settings",
+        "description": "Leave username/password unchanged to keep existing credentials.\n\nCurrent retention is set to **{current_estimate}** across {num_objects} object(s). Enter 0 to keep data forever.",
+        "data": {
+          "username": "Username / Email",
+          "password": "Password",
+          "retention_days": "Data retention in days (0 = keep forever)"
+        }
+      },
+      "retention_confirm": {
+        "title": "Confirm storage settings",
+        "description": "Retention: **{days}**\n\nEstimated storage for {num_objects} object(s): **{estimate}**\n\n*(Based on 24 hourly readings × 2 series × ~80 bytes per row)*\n\nClick Submit to save."
+      }
+    },
+    "error": {
+      "invalid_auth": "Login failed. Check your username and password.",
+      "confirm_contact": "Login succeeded but the consumption form is not available.",
+      "retention_invalid": "Retention must be a whole number of days (0 or more)."
+    }
+  }
+}
