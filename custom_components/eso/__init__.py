@@ -198,7 +198,9 @@ async def _async_get_statistics(
     )
     existing_by_ts: dict[float, float] = {}
     for rec in existing_raw.get(metadata["statistic_id"], []):
-        existing_by_ts[rec["start"].timestamp()] = rec.get("state") or 0.0
+        start = rec["start"]
+        ts = start if isinstance(start, (int, float)) else start.timestamp()
+        existing_by_ts[ts] = rec.get("state") or 0.0
 
     statistics: list[StatisticData] = []
     sum_ = None
