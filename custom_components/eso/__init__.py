@@ -178,12 +178,40 @@ async def async_insert_statistics(
 async def _async_get_statistics(
     hass: HomeAssistant, metadata: StatisticMetaData, generation_data: dict
 ) -> list[StatisticData]:
+    if not generation_data:
+        return []
+
+    tz = dt_util.get_time_zone("Europe/Vilnius")
+    sorted_ts = sorted(generation_data.keys())
+    range_start = datetime.fromtimestamp(sorted_ts[0]).replace(tzinfo=tz)
+    range_end = datetime.fromtimestamp(sorted_ts[-1]).replace(tzinfo=tz) + timedelta(hours=1)
+
+    existing_raw = await get_instance(hass).async_add_executor_job(
+        statistics_during_period,
+        hass,
+        range_start,
+        range_end,
+        {metadata["statistic_id"]},
+        "hour",
+        None,
+        {"state"},
+    )
+    existing_by_ts: dict[float, float] = {}
+    for rec in existing_raw.get(metadata["statistic_id"], []):
+        existing_by_ts[rec["start"].timestamp()] = rec.get("state") or 0.0
+
     statistics: list[StatisticData] = []
     sum_ = None
-    for ts, kwh in generation_data.items():
-        dt_object = datetime.fromtimestamp(ts).replace(
-            tzinfo=dt_util.get_time_zone("Europe/Vilnius")
-        )
+    for ts in sorted_ts:
+        kwh = generation_data[ts]
+        existing_val = existing_by_ts.get(ts, 0.0)
+        if kwh == 0.0 and existing_val > 0.0:
+            _LOGGER.debug(
+                "Preserving existing value %.3f kWh at ts=%s for %s (ESO returned 0)",
+                existing_val, ts, metadata["statistic_id"],
+            )
+            kwh = existing_val
+        dt_object = datetime.fromtimestamp(ts).replace(tzinfo=tz)
         if sum_ is None:
             sum_ = await get_previous_sum(hass, metadata, dt_object)
         sum_ += kwh

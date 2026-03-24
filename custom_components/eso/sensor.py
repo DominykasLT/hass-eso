@@ -87,8 +87,16 @@ class ESOSensor(SensorEntity):
         series = dataset.get(self._series_key)
         if not series:
             return
-        latest_ts = max(series.keys())
-        self._attr_native_value = series[latest_ts]
+        if self._granularity == GRANULARITY_MONTHLY:
+            sorted_ts = sorted(series.keys())
+            non_zero = [(ts, series[ts]) for ts in sorted_ts if series[ts] > 0]
+            if not non_zero:
+                return
+            latest_ts, value = non_zero[-1]
+        else:
+            latest_ts = max(series.keys())
+            value = series[latest_ts]
+        self._attr_native_value = value
         _LOGGER.debug(
             "Updated sensor %s: %s kWh at %s",
             self._attr_unique_id,
